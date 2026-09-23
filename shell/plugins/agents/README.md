@@ -95,11 +95,14 @@ only adds the meter and the spent-of-funded line under the real figure.
 
 ### LiteLLM
 
-The collector reads one proxy, not a local session directory. Set the proxy
-URL and a key in `~/.config/omarchy/agents/litellm.json`, or export
-`LITELLM_BASE_URL` and `LITELLM_API_KEY` (`LITELLM_MASTER_KEY` is also read).
-A trailing `/v1` on the URL is removed. The key is sent only to that host,
-and a redirect to any other host is refused.
+The panel has no field for a LiteLLM key and Omarchy does not create one.
+Whoever runs the proxy issues a virtual key. Each person puts that key on
+their own machine, either in `~/.config/omarchy/agents/litellm.json` or in
+the environment. `LITELLM_BASE_URL` and `LITELLM_API_KEY` override the file
+when both are set. `LITELLM_MASTER_KEY` is accepted as the key. A trailing
+`/v1` on the URL is removed. The key is sent only to that host, and a
+redirect to any other host is refused. With neither a URL nor a key, the
+tab stays empty and the record names these two places.
 
 ```json
 {
@@ -109,14 +112,15 @@ and a redirect to any other host is refused.
 }
 ```
 
-An admin key is asked for `/global/activity`, which is every request the
-proxy logged. Current proxies include a per-model breakdown there, with
-prompt, cache, and output split apart. Older proxies return only a day
-series from that route, so the collector also reads `/global/activity/model`.
-That route has a combined token total per model and no split, and the panel
-shows that total. A key that gets 403 or 404 on the global route falls back
-to `/user/daily/activity`, and the panel labels that tab "This key" because
-the numbers are no longer the whole instance.
+The key is the identity. The desktop login is not. A key that can read
+`/global/activity` shows every request that proxy logged, and the tab is
+labeled "Proxy". Model rows then come from `/global/activity/model`, which
+is one combined token total per model over the requested 30 days. That
+route does not split input, output, and cache. A key that gets 403 or 404
+on the global route falls back to `/user/daily/activity`. The tab is
+labeled "This key" because the numbers are only the user who owns that
+key. Other virtual keys on the same proxy belong to other users and are
+not included.
 `maxBudget` is optional. When the key itself reports `max_budget`, that live
 ledger wins and `maxBudget` is ignored. Without either, the tab still shows
 tokens by day and, when the proxy sent them, by model.
