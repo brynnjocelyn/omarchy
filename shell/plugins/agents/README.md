@@ -55,6 +55,7 @@ light surfaces — and the bar glyph stands in when there is none.
 | `claude` | Anthropic's OAuth usage endpoint (5-hour session + 7-day weekly) | `~/.claude/projects` transcripts, opencode sessions on an Anthropic provider, plus `stats-cache.json` and `history.jsonl` as fallback |
 | `codex` | The Codex app-server RPC | native Codex CLI session files (plus pi and opencode sessions) |
 | `fireworks` | Estimated prepaid balance: configured funding minus rated account costs | Fireworks billing API, grouped by day and model for the last 30 days |
+| `litellm` | Key `max_budget`, or `maxBudget` in the config file, minus spend | LiteLLM `/global/activity` for the whole proxy, or `/user/daily/activity` for the key's own user, over the last 30 days |
 
 Claude limits need a signed-in CLI; without credentials the panel says so and
 falls back to local stats only. A non-default Claude directory is honored via
@@ -92,6 +93,35 @@ accounts. Without a configured `fundedAmount` the tab still shows token
 usage, just no balance. With a live ledger, `fundedAmount` is optional and
 only adds the meter and the spent-of-funded line under the real figure.
 
+### LiteLLM
+
+The collector reads one proxy, not a local session directory. Set the proxy
+URL and a key in `~/.config/omarchy/agents/litellm.json`, or export
+`LITELLM_BASE_URL` and `LITELLM_API_KEY` (`LITELLM_MASTER_KEY` is also read).
+A trailing `/v1` on the URL is removed. The key is sent only to that host,
+and a redirect to any other host is refused.
+
+```json
+{
+  "baseUrl": "http://127.0.0.1:4000",
+  "apiKey": "",
+  "maxBudget": 20
+}
+```
+
+An admin key is asked for `/global/activity`, which is every request the
+proxy logged. Current proxies include a per-model breakdown there. Older
+proxies return only a day series of request and token totals, and the model
+chart stays empty rather than inventing rows. A key that gets 403 or 404 on
+the global route falls back to `/user/daily/activity`, and the panel labels
+that tab "This key" because the numbers are no longer the whole instance.
+`maxBudget` is optional. When the key itself reports `max_budget`, that live
+ledger wins and `maxBudget` is ignored. Without either, the tab still shows
+tokens by day and, when the proxy sent them, by model.
+
+`enabled` defaults to `true` for a LiteLLM record that has data. Hide it with
+the same `providers` object as the other agents, adding `"litellm": { "enabled": false }`.
+
 ## Interactions
 
 - Bar icon: left = panel, right = launch agent, middle = next subscription.
@@ -128,7 +158,8 @@ edit `shell.json` directly):
 omarchy bar set omarchy.agents providers '{
   "claude": { "enabled": true },
   "codex": { "enabled": false },
-  "fireworks": { "enabled": true }
+  "fireworks": { "enabled": true },
+  "litellm": { "enabled": true }
 }' --json
 ```
 
