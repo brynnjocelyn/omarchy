@@ -172,8 +172,7 @@ def summarize_activity(payload: dict[str, Any], today: date | None = None) -> di
 
 def summarize_daily_data(payload: dict[str, Any], today: date) -> dict[str, Any]:
   # LiteLLM's older global activity route is a day series of request and
-  # token totals. It has no model breakdown, so the panel's model chart stays
-  # empty rather than inventing one.
+  # token totals. Model rows for that shape come from /global/activity/model.
   recent_dates = [(today - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
   recent = {day: 0 for day in recent_dates}
   active_dates: set[str] = set()
@@ -277,6 +276,42 @@ def summarize_results(payload: dict[str, Any], today: date) -> dict[str, Any]:
     "modelUsage": model_usage,
     "windowSpend": window_spend,
   }
+
+
+def summarize_model_series(payload: dict[str, Any], today: date) -> dict[str, Any]:
+  # /global/activity/model on LiteLLM 1.82 reports one total per model. The
+  # panel's bar is the sum of the four buckets, so the combined total sits in
+  # inputTokens. Prompt, cache, and output stay zero because this route does
+  # not split them.
+  model_usage: dict[str, dict[str, int]] = {}
+  today_by_model: dict[str, int] = {}
+  rows = payload.get("results") if isinstance(payload.get("results"), list) else []
+  today_key = today.isoformat()
+  for raw in rows:
+    if not isinstance(raw, dict):
+      continue
+    name = str(raw.get("model") or "").strip()
+    if not name:
+      continue
+    daily = raw.get("daily_data") if isinstance(raw.get("daily_data"), list) else []
+    summed = 0
+    today_tokens = 0
+    for day_row in daily:
+      if not isinstance(day_row, dict):
+        continue
+      tokens = number(day_row.get("total_tokens"))
+      summed += tokens
+      if parse_activity_date(day_row.get("date"), today) == today_key:
+        today_tokens += tokens
+    total = number(raw.get("sum_total_tokens")) or summed
+    if total <= 0:
+      continue
+    bucket = empty_bucket()
+    bucket["inputTokens"] = total
+    model_usage[name] = bucket
+    if today_tokens > 0:
+      today_by_model[name] = today_tokens
+  return {"modelUsage": model_usage, "todayTokensByModel": today_by_model}
 
 
 def config_path() -> Path:
@@ -406,6 +441,13 @@ class LiteLLMClient:
       return payload, "global"
     return self._paged("/user/daily/activity", query), "user"
 
+  def model_series(self, start_day: date, end_day: date) -> dict[str, Any] | None:
+    query = {"start_date": start_day.isoformat(), "end_date": end_day.isoformat()}
+    try:
+      return self.get("/global/activity/model", query)
+    except LiteLLMError:
+      return None
+
   def key_budget(self) -> tuple[float, float] | None:
     try:
       payload = self.get("/key/info")
@@ -441,11 +483,19 @@ def scan(config: dict[str, Any] | None = None) -> dict[str, Any]:
   try:
     client = LiteLLMClient(base_url, api_key)
     today = datetime.now().astimezone().date()
-    payload, scope_name = client.activity(today - timedelta(days=WINDOW_DAYS - 1), today)
+    start = today - timedelta(days=WINDOW_DAYS - 1)
+    payload, scope_name = client.activity(start, today)
   except LiteLLMError as error:
     return base_record(usageStatusText="LiteLLM unavailable", authHelpText=str(error))
 
   stats = summarize_activity(payload, today)
+  if scope_name == "global" and not stats["modelUsage"]:
+    series = client.model_series(start, today)
+    if series:
+      models = summarize_model_series(series, today)
+      if models["modelUsage"]:
+        stats["modelUsage"] = models["modelUsage"]
+        stats["todayTokensByModel"] = models["todayTokensByModel"]
   window_spend = float(stats.pop("windowSpend"))
   record = base_record(
     ready=True,

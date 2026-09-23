@@ -101,6 +101,21 @@ summary["legacyToday"] = legacy["todayTotalTokens"]
 summary["legacyRequests"] = legacy["totalPrompts"]
 summary["legacyModels"] = legacy["modelUsage"]
 summary["legacyYear"] = scanner.parse_activity_date("Dec 28", date(2026, 1, 5)) == "2025-12-28"
+series = scanner.summarize_model_series({
+  "results": [
+    {
+      "model": "ollama/qwen",
+      "sum_total_tokens": 90,
+      "daily_data": [{"date": "Jul 31", "total_tokens": 70, "api_requests": 2}],
+    },
+    {"model": "", "sum_total_tokens": 10, "daily_data": []},
+    {"model": "quiet", "sum_total_tokens": 0, "daily_data": []},
+  ]
+}, date(2026, 7, 31))
+summary["seriesTotal"] = series["modelUsage"]["ollama/qwen"]["inputTokens"]
+summary["seriesSplit"] = series["modelUsage"]["ollama/qwen"]["outputTokens"]
+summary["seriesToday"] = series["todayTokensByModel"]["ollama/qwen"]
+summary["seriesSkipped"] = list(series["modelUsage"]) == ["ollama/qwen"]
 summary["uncached"] = summary["modelUsage"]["ollama/qwen2.5"]["inputTokens"]
 summary["cacheRead"] = summary["modelUsage"]["ollama/qwen2.5"]["cacheReadInputTokens"]
 summary["flatModel"] = summary["modelUsage"]["gpt-4"]["outputTokens"]
@@ -154,6 +169,30 @@ scanner.LiteLLMClient = UserFallback
 user_record = scanner.scan({"baseUrl": "https://proxy.example", "apiKey": "sk-user", "maxBudget": 10})
 summary["userTier"] = user_record["tierLabel"]
 summary["estimatedBalance"] = user_record["balance"]
+
+class LegacyModelClient:
+  def __init__(self, base_url, api_key):
+    pass
+
+  def activity(self, start_day, end_day):
+    return {"daily_data": [{"date": "Jul 31", "api_requests": 4, "total_tokens": 90}]}, "global"
+
+  def model_series(self, start_day, end_day):
+    return {
+      "results": [{
+        "model": "ollama/qwen",
+        "sum_total_tokens": 90,
+        "daily_data": [{"date": "Jul 31", "total_tokens": 90}],
+      }]
+    }
+
+  def key_budget(self):
+    return None
+
+scanner.LiteLLMClient = LegacyModelClient
+legacy_record = scanner.scan({"baseUrl": "http://proxy.example:4000", "apiKey": "sk-old"})
+summary["legacyScanModel"] = legacy_record["modelUsage"]["ollama/qwen"]["inputTokens"]
+summary["legacyScanReady"] = legacy_record["ready"] and legacy_record["tierLabel"] == "Proxy"
 
 refused = False
 try:
@@ -265,3 +304,11 @@ pass "LiteLLM collector falls back to the user activity route"
 [[ $(jq -r '.legacyToday' <<<"$result") == "90" && $(jq -r '.legacyRequests' <<<"$result") == "6" && $(jq -r '.legacyYear' <<<"$result") == "true" && $(jq -c '.legacyModels' <<<"$result") == "{}" ]] ||
   fail "LiteLLM collector reads the older global activity day series" "$result"
 pass "LiteLLM collector reads the older global activity day series"
+
+[[ $(jq -r '.seriesTotal' <<<"$result") == "90" && $(jq -r '.seriesSplit' <<<"$result") == "0" && $(jq -r '.seriesToday' <<<"$result") == "70" && $(jq -r '.seriesSkipped' <<<"$result") == "true" ]] ||
+  fail "LiteLLM collector reads per-model totals from the model activity route" "$result"
+pass "LiteLLM collector reads per-model totals from the model activity route"
+
+[[ $(jq -r '.legacyScanModel' <<<"$result") == "90" && $(jq -r '.legacyScanReady' <<<"$result") == "true" ]] ||
+  fail "LiteLLM collector attaches model rows when the day series has none" "$result"
+pass "LiteLLM collector attaches model rows when the day series has none"

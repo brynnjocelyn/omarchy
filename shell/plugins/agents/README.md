@@ -110,11 +110,13 @@ and a redirect to any other host is refused.
 ```
 
 An admin key is asked for `/global/activity`, which is every request the
-proxy logged. Current proxies include a per-model breakdown there. Older
-proxies return only a day series of request and token totals, and the model
-chart stays empty rather than inventing rows. A key that gets 403 or 404 on
-the global route falls back to `/user/daily/activity`, and the panel labels
-that tab "This key" because the numbers are no longer the whole instance.
+proxy logged. Current proxies include a per-model breakdown there, with
+prompt, cache, and output split apart. Older proxies return only a day
+series from that route, so the collector also reads `/global/activity/model`.
+That route has a combined token total per model and no split, and the panel
+shows that total. A key that gets 403 or 404 on the global route falls back
+to `/user/daily/activity`, and the panel labels that tab "This key" because
+the numbers are no longer the whole instance.
 `maxBudget` is optional. When the key itself reports `max_budget`, that live
 ledger wins and `maxBudget` is ignored. Without either, the tab still shows
 tokens by day and, when the proxy sent them, by model.
